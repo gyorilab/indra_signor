@@ -7,7 +7,7 @@ from indra.statements import amino_acids
 from indra.sources import indra_db_rest
 
 
-header = ['ENTITYA', 'TYPEA', 'IDA', 'DATABASEA'
+header = ['ENTITYA', 'TYPEA', 'IDA', 'DATABASEA',
           'ENTITYB', 'TYPEB', 'IDB', 'DATABASEB',
           'EFFECT', 'MECHANISM', 'RESIDUE', 'SEQUENCE',
           'TAX_ID', 'CELL_DATA', 'TISSUE_DATA',
