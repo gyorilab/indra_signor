@@ -13,8 +13,7 @@ header = ['ENTITYA', 'TYPEA', 'IDA', 'DATABASEA'
           'TAX_ID', 'CELL_DATA', 'TISSUE_DATA',
           'MODULATOR_COMPLEX', 'TARGET_COMPLEX',
           'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
-          'PMID', 'DIRECT',	'NOTES', 'ANNOTATOR', 'SENTENCE',
-          'in_deg_kin', 'out_deg_kin', 'in_deg_sub', 'out_deg_sub']
+          'PMID', 'DIRECT',	'NOTES', 'ANNOTATOR', 'SENTENCE']
 
 
 def curations_to_rows(curations):
@@ -64,8 +63,6 @@ def curations_to_rows(curations):
             '', '', '', '',
             # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR', 'SENTENCE',
             ev.pmid, 'YES', '', 'lperfetto', dephos_ev.text + activity_ev.text,
-            # 'in_deg_kin', 'out_deg_kin', 'in_deg_sub', 'out_deg_sub'
-            '', '', '', ''
         ]
 
 
