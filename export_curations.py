@@ -16,6 +16,15 @@ header = ['ENTITYA', 'TYPEA', 'IDA', 'DATABASEA',
           'PMID', 'DIRECT',	'NOTES', 'ANNOTATOR', 'SENTENCE']
 
 
+def sanitize_text(text):
+    text = text.replace('[XREF_BIBR - XREF_BIBR]', '')
+    text = text.replace('[XREF_BIBR]', '')
+    text = text.replace('[XREF_BIBR', '')
+    text = text.replace('XREF_BIBR', '')
+    text = text.strip()
+    return text
+
+
 def curations_to_rows(curations):
     # We need to check if there is activation and/or inhibition
     # among the statements. If there is, then we create a regulation
@@ -61,8 +70,11 @@ def curations_to_rows(curations):
             '', '',
             # 'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
             '', '', '', '',
-            # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR', 'SENTENCE',
-            ev.pmid, 'YES', '', 'lperfetto', dephos_ev.text + activity_ev.text,
+            # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR'
+            ev.pmid, 'YES', '', 'lperfetto',
+            # 'SENTENCE'
+            '|'.join([sanitize_text(dephos_ev.text),
+                      sanitize_text(activity_ev.text)]),
         ]
 
 
