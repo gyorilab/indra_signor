@@ -17,12 +17,69 @@ header = ['ENTITYA', 'TYPEA', 'IDA', 'DATABASEA',
 
 
 def sanitize_text(text):
+    if text is None:
+        return text
     text = text.replace('[XREF_BIBR - XREF_BIBR]', '')
     text = text.replace('[XREF_BIBR]', '')
     text = text.replace('[XREF_BIBR', '')
     text = text.replace('XREF_BIBR', '')
     text = text.strip()
     return text
+
+
+comment_mapping = {
+    'Ser15|EFFECT: down-regulates quantity by destabilization':
+        'RESIDUE:S15;EFFECT:down-regulates quantity by destabilization',
+    'Tyr15': 'RESIDUE:Y15',
+    'Thr14': 'RESIDUE:T14',
+    'Ser15': 'RESIDUE:S15',
+    'effect:down-regulates activity': 'EFFECT:down-regulates activity',
+    'effect:up-regulates activity': 'EFFECT:up-regulates activity',
+    'residue:tyr705': 'RESIDUE:Y705',
+    'direct:no': 'DIRECT:no',
+    'TAXID:9606;TISSUE:BTO:0000759': 'TAXID:9606;CELL:BTO:0000759',
+    'RESIDUE:S151;T753': 'RESIDUE:S151;RESIDUE:T753',
+    'RESIDUE:Y448; SENTENCE:adaptor protein 3BP2 serves as a binding protein and a physiological substrate of SHP-1. 3BP2 is phosphorylated on tyrosyl residue 448 in response to TCR activation, and the phosphorylation is required for T c':
+        'RESIDUE:Y448;SENTENCE:adaptor protein 3BP2 serves as a binding protein and a physiological substrate of SHP-1. 3BP2 is phosphorylated on tyrosyl residue 448 in response to TCR activation, and the phosphorylation is required for T c',
+    'sentence:Integrin-bound PTP-PEST dephosphorylates RhoGDI1.':
+        'SENTENCE:Integrin-bound PTP-PEST dephosphorylates RhoGDI1.',
+    'EFFECT: dow-regulates quantity by degradation': 'EFFECT:dowm-regulates quantity by degradation',
+}
+
+
+def process_comment(comment):
+    allowed_keys = {'CELL', 'TAXID', 'DIRECT', 'EFFECT', 'SENTENCE',
+                    'MECHANISM', 'RESIDUE'}
+    if not comment:
+        return {}
+
+    comment = comment_mapping.get(comment, comment)
+    if 'dow-reg' in comment:
+        breakpoint()
+    parts = comment.split(';')
+    comment_data = defaultdict(list)
+    for part in parts:
+        try:
+            key, value = part.split(':', maxsplit=1)
+        except ValueError:
+            print(comment)
+            break
+        if key not in allowed_keys:
+            print(comment)
+            break
+        if key == 'SENTENCE':
+            comment_data['sentence'].append(value)
+        elif key == 'EFFECT':
+            comment_data['effect'].append(value)
+        elif key == 'MECHANISM':
+            comment_data['mechanism'].append(value)
+        elif key == 'DIRECT':
+            comment_data['direct'].append(value)
+        elif key == 'CELL':
+            comment_data['cell_data'].append(value)
+        elif key == 'TAXID':
+            comment_data['taxid'].append(value)
+    return dict(comment_data)
 
 
 def curations_to_rows(curations):
@@ -36,19 +93,26 @@ def curations_to_rows(curations):
     has_inhibition = Inhibition in stmts_by_type
     has_dephos = Dephosphorylation in stmts_by_type
 
+    # Here we need to look at cases where there is a SENTENCE
+    # involved
     if not has_dephos or not (has_activation or has_inhibition):
         return []
 
     for dephos_stmt_package, activity_stmt_package in \
             itertools.product(stmts_by_type[Dephosphorylation],
                               stmts_by_type[Activation] + stmts_by_type[Inhibition]):
-        dephos_stmt, dephos_ev, dephos_cur = dephos_stmt_package
-        activity_stmt, activity_ev, activity_cur = activity_stmt_package
+        dephos_stmt, dephos_ev, dephos_cur, dephos_comment = dephos_stmt_package
+        activity_stmt, activity_ev, activity_cur, activity_comment = activity_stmt_package
+        assert not dephos_comment.get('effect')
         phosphatase = dephos_stmt.enz
         substrate = dephos_stmt.sub
         is_activation = isinstance(activity_stmt, Activation)
 
-        effect = 'up-regulates' if is_activation else 'down-regulates'
+        if activity_comment and 'effect' in activity_comment:
+            assert len(activity_comment['effect']) == 1
+            effect = activity_comment['effect'][0]
+        else:
+            effect = 'up-regulates' if is_activation else 'down-regulates'
 
         if dephos_stmt.residue and dephos_stmt.position:
             residue = \
@@ -56,6 +120,13 @@ def curations_to_rows(curations):
                 dephos_stmt.position
         else:
             residue = ''
+
+        sentence_parts = []
+        if dephos_ev.text:
+            sentence_parts.append(sanitize_text(dephos_ev.text))
+        if activity_ev.text:
+            sentence_parts.append(sanitize_text(activity_ev.text))
+        sentence = '|'.join(sentence_parts)
 
         yield [
             # 'ENTITYA', 'TYPEA', 'IDA', 'DATABASEA'
@@ -73,8 +144,7 @@ def curations_to_rows(curations):
             # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR'
             ev.pmid, 'YES', '', 'lperfetto',
             # 'SENTENCE'
-            '|'.join([sanitize_text(dephos_ev.text),
-                      sanitize_text(activity_ev.text)]),
+            sentence
         ]
 
 
@@ -152,17 +222,17 @@ if __name__ == '__main__':
     for cur in curs:
         if not cur['tag'] == 'correct':
             continue
+        comment_data = process_comment(cur['text'])
+        if comment_data:
+            print(comment_data)
         stmt = stmts_by_hash[cur['pa_hash']]
         ev = ev_by_source_hash[cur['source_hash']]
         curs_by_hashes[(stmt.get_hash(), ev.get_source_hash())].append(cur)
         key = get_pair_key(stmt, ev)
-        stmts_by_pair_pubmed_key[key].append((stmt, ev, cur))
+        stmts_by_pair_pubmed_key[key].append((stmt, ev, cur, comment_data))
 
     all_rows = []
     for key, curations in stmts_by_pair_pubmed_key.items():
-        print(key)
-        for s, ev, cur in curations:
-            print(s, ev.text)
         curation_rows = list(curations_to_rows(curations))
         curation_rows = merge_curation_rows(curation_rows)
         all_rows += curation_rows
