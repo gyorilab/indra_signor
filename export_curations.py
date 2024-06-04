@@ -2,7 +2,8 @@ import csv
 import pickle
 import itertools
 from collections import defaultdict
-from indra.statements import Dephosphorylation, RegulateActivity, Activation, Inhibition
+from indra.statements import Dephosphorylation, RegulateActivity, \
+    Activation, Inhibition, Agent
 from indra.statements import amino_acids
 from indra.sources import indra_db_rest
 
@@ -43,7 +44,7 @@ comment_mapping = {
         'RESIDUE:Y448;SENTENCE:adaptor protein 3BP2 serves as a binding protein and a physiological substrate of SHP-1. 3BP2 is phosphorylated on tyrosyl residue 448 in response to TCR activation, and the phosphorylation is required for T c',
     'sentence:Integrin-bound PTP-PEST dephosphorylates RhoGDI1.':
         'SENTENCE:Integrin-bound PTP-PEST dephosphorylates RhoGDI1.',
-    'EFFECT: dow-regulates quantity by degradation': 'EFFECT:dowm-regulates quantity by degradation',
+    'EFFECT: dow-regulates quantity by degradation': 'EFFECT:down-regulates quantity by degradation',
 }
 
 
@@ -95,6 +96,33 @@ def curations_to_rows(curations):
 
     # Here we need to look at cases where there is a SENTENCE
     # involved
+
+    if not (has_activation or has_inhibition):
+        if has_dephos:
+            for dephos_stmt, dephos_ev, dephos_cur, dephos_comment \
+                    in stmts_by_type[Dephosphorylation]:
+                if dephos_comment and dephos_comment.get('effect'):
+                    # We just handle one effect for now
+                    assert len(dephos_comment['effect']) == 1
+                    effect = dephos_comment['effect'][0]
+                    if 'down-regulates' in effect:
+                        stmts_by_type[Inhibition].append(
+                            (Inhibition(Agent('X'), Agent('Y')), None, None,
+                             {'effect': [effect]})
+                        )
+                        has_inhibition = True
+                        dephos_comment.pop('effect')
+                    elif 'up-regulates' in effect:
+                        stmts_by_type[Activation].append(
+                            (Activation(Agent('X'), Agent('Y')), None, None,
+                             {'effect': [effect]})
+                        )
+                        has_activation = True
+                        dephos_comment.pop('effect')
+                    else:
+                        print('Unknown effect')
+                        print(dephos_stmt, dephos_comment)
+
     if not has_dephos or not (has_activation or has_inhibition):
         return []
 
@@ -102,7 +130,7 @@ def curations_to_rows(curations):
             itertools.product(stmts_by_type[Dephosphorylation],
                               stmts_by_type[Activation] + stmts_by_type[Inhibition]):
         dephos_stmt, dephos_ev, dephos_cur, dephos_comment = dephos_stmt_package
-        activity_stmt, activity_ev, activity_cur, activity_comment = activity_stmt_package
+        activity_stmt, activity_ev, _, activity_comment = activity_stmt_package
         assert not dephos_comment.get('effect')
         phosphatase = dephos_stmt.enz
         substrate = dephos_stmt.sub
@@ -124,7 +152,7 @@ def curations_to_rows(curations):
         sentence_parts = []
         if dephos_ev.text:
             sentence_parts.append(sanitize_text(dephos_ev.text))
-        if activity_ev.text:
+        if activity_ev and activity_ev.text:
             sentence_parts.append(sanitize_text(activity_ev.text))
         sentence = '|'.join(sentence_parts)
 
@@ -223,8 +251,8 @@ if __name__ == '__main__':
         if not cur['tag'] == 'correct':
             continue
         comment_data = process_comment(cur['text'])
-        if comment_data:
-            print(comment_data)
+        #if comment_data:
+        #    print(comment_data)
         stmt = stmts_by_hash[cur['pa_hash']]
         ev = ev_by_source_hash[cur['source_hash']]
         curs_by_hashes[(stmt.get_hash(), ev.get_source_hash())].append(cur)
