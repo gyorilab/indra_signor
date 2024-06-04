@@ -140,7 +140,7 @@ def curations_to_rows(curations):
             itertools.product(stmts_by_type[Dephosphorylation],
                               stmts_by_type[Activation] + stmts_by_type[Inhibition]):
         dephos_stmt, dephos_ev, dephos_cur, dephos_comment = dephos_stmt_package
-        activity_stmt, activity_ev, _, activity_comment = activity_stmt_package
+        activity_stmt, activity_ev, activity_cur, activity_comment = activity_stmt_package
         assert not dephos_comment.get('effect')
         phosphatase = dephos_stmt.enz
         substrate = dephos_stmt.sub
@@ -176,6 +176,14 @@ def curations_to_rows(curations):
         else:
             direct = 'YES'
 
+        curators = []
+        if dephos_cur and dephos_cur.get('curator'):
+            curators.append(dephos_cur['curator'])
+        if activity_cur and activity_cur.get('curator'):
+            curators.append(activity_cur['curator'])
+        parts = sorted(curators)[0].split('@')[0].split('.')
+        curator = parts[0][0] + parts[1]
+
         yield [
             # 'ENTITYA', 'TYPEA', 'IDA', 'DATABASEA'
             phosphatase.name, 'protein', phosphatase.db_refs.get('UP'), 'UNIPROT',
@@ -190,7 +198,7 @@ def curations_to_rows(curations):
             # 'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
             '', '', '', '',
             # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR'
-            ev.pmid, direct, '', 'lperfetto',
+            ev.pmid, direct, '', curator,
             # 'SENTENCE'
             sentence
         ]
