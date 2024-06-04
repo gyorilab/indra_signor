@@ -24,6 +24,7 @@ def sanitize_text(text):
     text = text.replace('[XREF_BIBR]', '')
     text = text.replace('[XREF_BIBR', '')
     text = text.replace('XREF_BIBR', '')
+    text = text.replace('(XREF_SUPPLEMENTARY)', '')
     text = text.strip()
     return text
 
@@ -156,6 +157,12 @@ def curations_to_rows(curations):
             sentence_parts.append(sanitize_text(activity_ev.text))
         sentence = '|'.join(sentence_parts)
 
+        direct_comment = dephos_comment.get('direct')
+        if direct_comment and direct_comment[0].lower() == 'no':
+            direct = 'NO'
+        else:
+            direct = 'YES'
+
         yield [
             # 'ENTITYA', 'TYPEA', 'IDA', 'DATABASEA'
             phosphatase.name, 'protein', phosphatase.db_refs.get('UP'), 'UNIPROT',
@@ -170,7 +177,7 @@ def curations_to_rows(curations):
             # 'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
             '', '', '', '',
             # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR'
-            ev.pmid, 'YES', '', 'lperfetto',
+            ev.pmid, direct, '', 'lperfetto',
             # 'SENTENCE'
             sentence
         ]
@@ -188,10 +195,10 @@ def merge_curation_rows(curation_rows):
         for row in rows_no_site:
             for row_with_site in rows_with_site:
                 if row['EFFECT'] == row_with_site['EFFECT']:
-                    row_wit_site_sentences = set(row_with_site['SENTENCE'].split('|'))
+                    row_with_site_sentences = set(row_with_site['SENTENCE'].split('|'))
                     row_sentences = set(row['SENTENCE'].split('|'))
                     unique_sentences = '|'.join(list(row_sentences |
-                                                     row_wit_site_sentences))
+                                                     row_with_site_sentences))
                     new_row = row_with_site.copy()
                     new_row['SENTENCE'] = unique_sentences
 
