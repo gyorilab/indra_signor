@@ -1,4 +1,6 @@
+import os
 import csv
+import json
 import pickle
 import itertools
 from collections import defaultdict
@@ -95,6 +97,9 @@ def curations_to_rows(curations):
     has_inhibition = Inhibition in stmts_by_type
     has_dephos = Dephosphorylation in stmts_by_type
 
+    if stmt_package[-1].get('mechanism'):
+        breakpoint()
+
     # Here we need to look at cases where there is a SENTENCE
     # involved
 
@@ -123,6 +128,15 @@ def curations_to_rows(curations):
                     else:
                         print('Unknown effect')
                         print(dephos_stmt, dephos_comment)
+    elif not has_dephos:
+        for act_stmt, act_ev, act_cur, act_comment \
+                in stmts_by_type[Activation] + stmts_by_type[Inhibition]:
+            if act_comment and act_comment.get('mechanism') == ['dephosphorylation']:
+                stmts_by_type[Dephosphorylation].append(
+                    (Dephosphorylation(act_stmt.subj, act_stmt.obj), act_ev, act_cur, {})
+                )
+                has_dephos = True
+                act_comment.pop('mechanism')
 
     if not has_dephos or not (has_activation or has_inhibition):
         return []
@@ -155,7 +169,7 @@ def curations_to_rows(curations):
             sentence_parts.append(sanitize_text(dephos_ev.text))
         if activity_ev and activity_ev.text:
             sentence_parts.append(sanitize_text(activity_ev.text))
-        sentence = '|'.join(sentence_parts)
+        sentence = '|'.join(sorted(set(sentence_parts)))
 
         direct_comment = dephos_comment.get('direct')
         if direct_comment and direct_comment[0].lower() == 'no':
@@ -233,7 +247,13 @@ def get_pair_key(stmt, ev):
 
 
 if __name__ == '__main__':
-    curs = indra_db_rest.get_curations()
+    if os.path.exists('curations.json'):
+        with open('curations.json', 'r') as fh:
+            curs = json.load(fh)
+    else:
+        curs = indra_db_rest.get_curations()
+        with open('curations.json', 'w') as fh:
+            json.dump(curs, fh, indent=1)
     curs = [cur for cur in curs
             if cur.get('source') == 'signor_dephos']
     # Sometimes we have duplicate curations that we can
