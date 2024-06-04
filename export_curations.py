@@ -58,8 +58,6 @@ def process_comment(comment):
         return {}
 
     comment = comment_mapping.get(comment, comment)
-    if 'dow-reg' in comment:
-        breakpoint()
     parts = comment.split(';')
     comment_data = defaultdict(list)
     for part in parts:
@@ -96,9 +94,6 @@ def curations_to_rows(curations):
     has_activation = Activation in stmts_by_type
     has_inhibition = Inhibition in stmts_by_type
     has_dephos = Dephosphorylation in stmts_by_type
-
-    if stmt_package[-1].get('mechanism'):
-        breakpoint()
 
     # Here we need to look at cases where there is a SENTENCE
     # involved
@@ -169,6 +164,10 @@ def curations_to_rows(curations):
             sentence_parts.append(sanitize_text(dephos_ev.text))
         if activity_ev and activity_ev.text:
             sentence_parts.append(sanitize_text(activity_ev.text))
+        if dephos_comment.get('sentence'):
+            sentence_parts.extend(dephos_comment['sentence'])
+        if activity_comment and activity_comment.get('sentence'):
+            sentence_parts.extend(activity_comment['sentence'])
         sentence = '|'.join(sorted(set(sentence_parts)))
 
         direct_comment = dephos_comment.get('direct')
