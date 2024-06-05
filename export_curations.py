@@ -176,6 +176,15 @@ def curations_to_rows(curations):
         else:
             direct = 'YES'
 
+        act_taxid = activity_comment.get('taxid')
+        dephos_taxid = dephos_comment.get('taxid')
+        if act_taxid:
+            taxid = act_taxid[0]
+        elif dephos_taxid:
+            taxid = dephos_taxid[0]
+        else:
+            taxid = '9606'
+
         curators = []
         if dephos_cur and dephos_cur.get('curator'):
             curators.append(dephos_cur['curator'])
@@ -192,7 +201,7 @@ def curations_to_rows(curations):
             # 'EFFECT', 'MECHANISM', 'RESIDUE', 'SEQUENCE',
             effect, 'dephosphorylation', residue, '',
             # 'TAX_ID', 'CELL_DATA', 'TISSUE_DATA',
-            '9606', '', '',
+            taxid, '', '',
             # 'MODULATOR_COMPLEX', 'TARGET_COMPLEX',
             '', '',
             # 'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
