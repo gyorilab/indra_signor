@@ -148,7 +148,7 @@ def curations_to_rows(curations):
 
         if activity_comment and 'effect' in activity_comment:
             assert len(activity_comment['effect']) == 1
-            effect = activity_comment['effect'][0]
+            effect = activity_comment['effect'][0].strip()
         else:
             effect = 'up-regulates' if is_activation else 'down-regulates'
 
