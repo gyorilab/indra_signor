@@ -198,7 +198,7 @@ def curations_to_rows(curations):
             # 'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
             '', '', '', '',
             # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR'
-            ev.pmid, direct, '', curator,
+            dephos_ev.pmid, direct, '', curator,
             # 'SENTENCE'
             sentence
         ]
