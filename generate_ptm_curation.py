@@ -63,6 +63,9 @@ UBI_LIGASES = get_e3_ubi_ligases()
 
 
 def enzyme_is_e3_ubi_ligase(stmt):
+    assert len(stmt.evidence) == 1
+    if stmt.evidence[0].text == 'UbiNet 2.0':
+        return False
     if isinstance(stmt, Modification) and stmt.enz is not None:
         if stmt.enz.name in UBI_LIGASES:
             return True
@@ -163,6 +166,10 @@ if __name__ == '__main__':
     for ss in stmts_by_hash.values():
         stmts += ss
 
+    # Filter for curated statements
+    curs = indra_db_rest.get_curations()
+    stmts = ac.filter_by_curation(stmts, curs)
+
     # Figure out the sets of Statements and evidences where
     # a modification statement and an activation/inhibition
     # statement come from the same paper
@@ -189,7 +196,7 @@ if __name__ == '__main__':
     mod_stmts = [stmt for stmt in stmts if isinstance(stmt, mod_class)]
 
     # Organize mod Statements by enzyme/substrate pair
-    # but only keep those Statements that contain an Activation/Inhibition
+    # but only keep those Statements that contain a regulation
     # from the same paper as the modification
     mod_stmts_by_pair = defaultdict(list)
     for stmt in mod_stmts:
@@ -212,7 +219,7 @@ if __name__ == '__main__':
                     has_signors_without_site[k] = True
 
     # Filter out Statements that are already in SIGNOR
-    mod_stmts_by_pair_new = defaultdict(list)
+    mod_stmts_by_pair_new = defaultdict(set)
     for k, v in mod_stmts_by_pair.items():
         for stmt in v:
             if k in has_signors_with_site:
@@ -223,33 +230,39 @@ if __name__ == '__main__':
             elif k in has_signors_without_site:
                 if stmt.position is None:
                     continue
-            mod_stmts_by_pair_new[k].append(stmt)
+            mod_stmts_by_pair_new[k].add(stmt)
 
     # We now compile all relevant Statements based on new modifications
     all_relevant_stmts = []
     for stmt in stmts:
         agents = stmt.real_agent_list()
         pair = (agents[0].name, agents[1].name)
-        if pair in mod_stmts_by_pair_new:
-            if stmt.evidence[0].pmid and \
-                    stmt.evidence[0].pmid in relevant_stmts_pmids[pair]:
-                if not (isinstance(stmt, mod_class) and
-                        stmt.evidence[0].source_api == 'signor'):
-                    all_relevant_stmts.append(stmt)
+        # Skip Statements where the pair is not new at all
+        if pair not in mod_stmts_by_pair_new:
+            continue
+        # Make sure this is either a modification that is
+        # novel to SIGNOR or a regulation statement for
+        # a relevant pair
+        if isinstance(stmt, mod_class) and \
+                stmt not in mod_stmts_by_pair_new.get(pair):
+            continue
+        # We also check that it is from a potentially relevant
+        # paper
+        if stmt.evidence[0].pmid and \
+                stmt.evidence[0].pmid in relevant_stmts_pmids[pair]:
+            is_signor_mod = (isinstance(stmt, mod_class) and
+                             stmt.evidence[0].source_api == 'signor')
+            if is_signor_mod:
+                breakpoint()
+            if not is_signor_mod:
+                all_relevant_stmts.append(stmt)
 
     # Assemble Statements and dump the results
     stmts_assembled = ac.run_preassembly(all_relevant_stmts,
                                          return_toplevel=False)
 
-    # Filter for curated statements
-    curs = indra_db_rest.get_curations()
-    stmts_correct = ac.filter_by_curation(stmts_assembled, curs)
-
-    # Filter out incorrect Statements
-    #correct_hashes = {c['pa_hash'] for c in curs if c['tag'] == 'correct'}
-    #stmts_correct = [s for s in stmts_assembled if s.get_hash() in correct_hashes]
-
-    for stmt in stmts_correct:
+    # Sort evidence by PMID
+    for stmt in stmts_assembled:
         stmt.evidence = sorted(stmt.evidence, key=lambda x: x.pmid)
 
     # This function sorts statements such that they are grouped according
@@ -269,7 +282,7 @@ if __name__ == '__main__':
     # We need these to sort the statements, these are evidences
     # for the given type of modification specifically
     ev_counts = defaultdict(int)
-    for stmt in stmts_correct:
+    for stmt in stmts_assembled:
         agents = stmt.real_agent_list()
         a, b = [a.name for a in agents[:2]]
         ab_key = (a, b)
@@ -277,7 +290,7 @@ if __name__ == '__main__':
             ev_counts[ab_key] += len(stmt.evidence)
     ev_counts = dict(ev_counts)
 
-    sorted_stmts = sorted(stmts_correct, key=lambda x: get_sort_key(x, ev_counts))
+    sorted_stmts = sorted(stmts_assembled, key=lambda x: get_sort_key(x, ev_counts))
 
     # Dump Statements as pickle as HTML
     ac.dump_statements(sorted_stmts, f'{mod_key}s_with_reg_sorted.pkl')
