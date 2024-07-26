@@ -170,41 +170,15 @@ if __name__ == '__main__':
     curs = indra_db_rest.get_curations()
     stmts = ac.filter_by_curation(stmts, curs)
 
-    # Figure out the sets of Statements and evidences where
-    # a modification statement and an activation/inhibition
-    # statement come from the same paper
-    stmts_by_paper = defaultdict(list)
-    for stmt in stmts:
-        for ev in stmt.evidence:
-            if ev.pmid:
-                if stmt not in stmts_by_paper[ev.pmid]:
-                    stmts_by_paper[ev.pmid].append(stmt)
-    print(f'Got {len(stmts_by_paper)} papers with potentially relevant statements')
-
-    relevant_stmts_pmids = defaultdict(set)
-    for paper, paper_stmts in stmts_by_paper.items():
-        stmt_types_by_pair = defaultdict(set)
-        for stmt in paper_stmts:
-            agents = stmt.real_agent_list()
-            stmt_types_by_pair[(agents[0].name, agents[1].name)].add(type(stmt))
-        for pair, stmt_types in stmt_types_by_pair.items():
-            if mod_class in stmt_types and len(stmt_types) > 1:
-                relevant_stmts_pmids[pair].add(paper)
-    print(f'Got {len(relevant_stmts_pmids)} relevant pairs of agents')
-
     # Get just modification statements of the given type
     mod_stmts = [stmt for stmt in stmts if isinstance(stmt, mod_class)]
 
     # Organize mod Statements by enzyme/substrate pair
-    # but only keep those Statements that contain a regulation
-    # from the same paper as the modification
     mod_stmts_by_pair = defaultdict(list)
     for stmt in mod_stmts:
         agents = stmt.real_agent_list()
         pair = (agents[0].name, agents[1].name)
-        if pair in relevant_stmts_pmids:
-            if stmt.evidence[0].pmid in relevant_stmts_pmids[pair]:
-                mod_stmts_by_pair[pair].append(stmt)
+        mod_stmts_by_pair[pair].append(stmt)
 
     # Organize SIGNOR modification Statements by whether they have a
     # specific site or not
@@ -217,6 +191,7 @@ if __name__ == '__main__':
                     has_signors_with_site[k].add(stmt.position)
                 else:
                     has_signors_without_site[k] = True
+    has_signors_with_site = dict(has_signors_with_site)
 
     # Filter out Statements that are already in SIGNOR
     mod_stmts_by_pair_new = defaultdict(set)
@@ -231,31 +206,44 @@ if __name__ == '__main__':
                 if stmt.position is None:
                     continue
             mod_stmts_by_pair_new[k].add(stmt)
+    mod_stmts_by_pair_new = dict(mod_stmts_by_pair_new)
 
-    # We now compile all relevant Statements based on new modifications
-    all_relevant_stmts = []
+    # We now organize all statements by relevant paper
+    stmts_by_paper = defaultdict(dict)
     for stmt in stmts:
-        agents = stmt.real_agent_list()
-        pair = (agents[0].name, agents[1].name)
-        # Skip Statements where the pair is not new at all
+        pair = (stmt.real_agent_list()[0].name, stmt.real_agent_list()[1].name)
         if pair not in mod_stmts_by_pair_new:
             continue
-        # Make sure this is either a modification that is
-        # novel to SIGNOR or a regulation statement for
-        # a relevant pair
-        if isinstance(stmt, mod_class) and \
-                stmt not in mod_stmts_by_pair_new.get(pair):
-            continue
-        # We also check that it is from a potentially relevant
-        # paper
-        if stmt.evidence[0].pmid and \
-                stmt.evidence[0].pmid in relevant_stmts_pmids[pair]:
-            is_signor_mod = (isinstance(stmt, mod_class) and
-                             stmt.evidence[0].source_api == 'signor')
-            if is_signor_mod:
-                breakpoint()
-            if not is_signor_mod:
-                all_relevant_stmts.append(stmt)
+        for ev in stmt.evidence:
+            if not ev.pmid:
+                continue
+            if pair in stmts_by_paper[ev.pmid]:
+                stmts_by_paper[ev.pmid][pair].add(stmt)
+            else:
+                stmts_by_paper[ev.pmid][pair] = {stmt}
+    stmts_by_paper = dict(stmts_by_paper)
+
+    all_relevant_stmts = []
+    for paper, stmts_by_pair in stmts_by_paper.items():
+        for pair, stmts_for_pair in stmts_by_pair.items():
+            stmts_by_type = defaultdict(list)
+            for stmt in stmts_for_pair:
+                if isinstance(stmt, mod_class):
+                    if stmt in mod_stmts_by_pair_new[pair]:
+                        stmts_by_type[type(stmt)].append(stmt)
+                else:
+                    stmts_by_type[type(stmt)].append(stmt)
+            # This means that in this paper, for this pair, we have
+            # both a modification and a regulation statement
+            if mod_class in stmts_by_type and len(stmts_by_type) > 1:
+                # Now we need to save all _novel_ modifications and all
+                # regulation statements from this paper
+                for stmt in stmts_for_pair:
+                    if isinstance(stmt, mod_class):
+                        if stmt in mod_stmts_by_pair_new[pair]:
+                            all_relevant_stmts.append(stmt)
+                    else:
+                        all_relevant_stmts.append(stmt)
 
     # Assemble Statements and dump the results
     stmts_assembled = ac.run_preassembly(all_relevant_stmts,
