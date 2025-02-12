@@ -29,6 +29,16 @@ def enzyme_is_phosphatase(stmt):
     return False
 
 
+def enzyme_is_kinase(stmt):
+    if isinstance(stmt, Modification) and stmt.enz is not None:
+        if hgnc_client.is_kinase(stmt.enz.name):
+            return True
+    elif isinstance(stmt, (RegulateActivity, RegulateAmount)):
+        if hgnc_client.is_kinase(stmt.subj.name):
+            return True
+    return False
+
+
 def get_e3_ubi_ligases():
     if not os.path.exists('e3_ubi_ligases.txt'):
         df = pystow.ensure_excel(
@@ -77,6 +87,7 @@ def enzyme_is_e3_ubi_ligase(stmt):
 
 semantic_constraints = {
     'dephosphorylation': enzyme_is_phosphatase,
+    'phosphorylation': enzyme_is_kinase,
     'ubiquitination': enzyme_is_e3_ubi_ligase
 }
 
@@ -147,7 +158,7 @@ def get_mod_and_reg_stmts(mod_key='dephophorylation', regulation_types=None):
 
 if __name__ == '__main__':
     ####################
-    mod_key = 'ubiquitination'
+    mod_key = 'phosphorylation'
     regulation_types = {RegulateAmount, RegulateActivity}
     ####################
     mod_class = modtype_to_modclass[mod_key]

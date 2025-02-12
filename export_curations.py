@@ -16,7 +16,7 @@ header = ['ENTITYA', 'TYPEA', 'IDA', 'DATABASEA',
           'TAX_ID', 'CELL_DATA', 'TISSUE_DATA',
           'MODULATOR_COMPLEX', 'TARGET_COMPLEX',
           'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
-          'PMID', 'DIRECT',	'NOTES', 'ANNOTATOR', 'SENTENCE']
+          'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR', 'SENTENCE']
 
 
 def sanitize_text(text):
