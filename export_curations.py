@@ -4,8 +4,7 @@ import json
 import pickle
 import itertools
 from collections import defaultdict
-from indra.statements import Dephosphorylation, RegulateActivity, \
-    Activation, Inhibition, Agent
+from indra.statements import *
 from indra.statements import amino_acids
 from indra.sources import indra_db_rest
 
@@ -91,115 +90,148 @@ def curations_to_rows(curations):
     stmts_by_type = defaultdict(list)
     for stmt_package in curations:
         stmts_by_type[type(stmt_package[0])].append(stmt_package)
-    has_activation = Activation in stmts_by_type
-    has_inhibition = Inhibition in stmts_by_type
-    has_dephos = Dephosphorylation in stmts_by_type
+    has_pos_reg = (Activation in stmts_by_type
+                   or IncreaseAmount in stmts_by_type)
+    has_neg_reg = (Inhibition in stmts_by_type
+                   or DecreaseAmount in stmts_by_type)
+    has_mod = mod_class in stmts_by_type
 
     # Here we need to look at cases where there is a SENTENCE
     # involved
 
-    if not (has_activation or has_inhibition):
-        if has_dephos:
-            for dephos_stmt, dephos_ev, dephos_cur, dephos_comment \
-                    in stmts_by_type[Dephosphorylation]:
-                if dephos_comment and dephos_comment.get('effect'):
+    # If there is no regulation statement we need to look at the
+    # comment in the mod statement and see if there is a
+    # mechanism that is a regulation statement. If there is, we
+    # need to create a regulation statement with the mod statement
+    # and the regulation statement.
+    if not (has_pos_reg or has_neg_reg):
+        if has_mod:
+            for mod_stmt, mod_ev, mod_cur, mod_comment \
+                    in stmts_by_type[mod_class]:
+                if mod_comment and mod_comment.get('effect'):
                     # We just handle one effect for now
-                    assert len(dephos_comment['effect']) == 1
-                    effect = dephos_comment['effect'][0]
+                    assert len(mod_comment['effect']) == 1
+                    effect = mod_comment['effect'][0]
                     if 'down-regulates' in effect:
-                        stmts_by_type[Inhibition].append(
-                            (Inhibition(Agent('X'), Agent('Y')), None, None,
+                        stmt_cls = DecreaseAmount if \
+                            effect.startswith('down-regulates quantity') else Inhibition
+                        stmts_by_type[stmt_cls].append(
+                            (stmt_cls(Agent('X'), Agent('Y')), None, None,
                              {'effect': [effect]})
                         )
-                        has_inhibition = True
-                        dephos_comment.pop('effect')
+                        has_neg_reg = True
+                        mod_comment.pop('effect')
                     elif 'up-regulates' in effect:
-                        stmts_by_type[Activation].append(
-                            (Activation(Agent('X'), Agent('Y')), None, None,
+                        stmt_cls = IncreaseAmount if \
+                            effect.startswith('up-regulates quantity') else Activation
+                        stmts_by_type[stmt_cls].append(
+                            (stmt_cls(Agent('X'), Agent('Y')), None, None,
                              {'effect': [effect]})
                         )
-                        has_activation = True
-                        dephos_comment.pop('effect')
+                        has_pos_reg = True
+                        mod_comment.pop('effect')
                     else:
                         print('Unknown effect')
-                        print(dephos_stmt, dephos_comment)
-    elif not has_dephos:
+                        print(mod_stmt, mod_comment)
+    # If there is no mechanism we need to look at the comment in the
+    # regulation statement and see if there is a mechanism that is a mod
+    # statement. If there is, we need to create a mod statement with the
+    # regulation statement and the mod statement.
+    elif not has_mod:
         for act_stmt, act_ev, act_cur, act_comment \
                 in stmts_by_type[Activation] + stmts_by_type[Inhibition]:
-            if act_comment and act_comment.get('mechanism') == ['dephosphorylation']:
-                stmts_by_type[Dephosphorylation].append(
-                    (Dephosphorylation(act_stmt.subj, act_stmt.obj), act_ev, act_cur, {})
+            if act_comment and act_comment.get('mechanism') == [mod_key]:
+                stmts_by_type[mod_class].append(
+                    (mod_class(act_stmt.subj, act_stmt.obj), act_ev, act_cur, {})
                 )
-                has_dephos = True
+                has_mod = True
                 act_comment.pop('mechanism')
 
-    if not has_dephos or not (has_activation or has_inhibition):
+    # If either mod or reg is missing that means that we couldn't
+    # create any missing statements from comments and so have to
+    # return
+    if not has_mod or not (has_pos_reg or has_neg_reg):
         return []
 
-    for dephos_stmt_package, activity_stmt_package in \
-            itertools.product(stmts_by_type[Dephosphorylation],
-                              stmts_by_type[Activation] + stmts_by_type[Inhibition]):
-        dephos_stmt, dephos_ev, dephos_cur, dephos_comment = dephos_stmt_package
-        activity_stmt, activity_ev, activity_cur, activity_comment = activity_stmt_package
-        assert not dephos_comment.get('effect')
-        phosphatase = dephos_stmt.enz
-        substrate = dephos_stmt.sub
-        is_activation = isinstance(activity_stmt, Activation)
+    for mod_stmt_package, reg_stmt_package in \
+            itertools.product(stmts_by_type[mod_class],
+                              stmts_by_type[Activation] + stmts_by_type[Inhibition] +
+                              stmts_by_type[IncreaseAmount] +
+                              stmts_by_type[DecreaseAmount]):
+        mod_stmt, mod_ev, mod_cur, mod_comment = mod_stmt_package
+        reg_stmt, reg_ev, reg_cur, reg_comment = reg_stmt_package
+        mod_comment_effect = mod_comment.get('effect')[0] if \
+            mod_comment and mod_comment.get('effect') else None
+        enz = mod_stmt.enz
+        substrate = mod_stmt.sub
+        is_activation = isinstance(reg_stmt, Activation)
+        is_upergulation = isinstance(reg_stmt, IncreaseAmount)
+        is_inhibition = isinstance(reg_stmt, Inhibition)
+        is_downregulation = isinstance(reg_stmt, DecreaseAmount)
 
-        if activity_comment and 'effect' in activity_comment:
-            assert len(activity_comment['effect']) == 1
-            effect = activity_comment['effect'][0].strip()
+        if reg_comment and 'effect' in reg_comment:
+            assert len(reg_comment['effect']) == 1
+            effect = reg_comment['effect'][0].strip()
+        elif mod_comment_effect:
+            effect = mod_comment_effect.strip()
         else:
-            effect = 'up-regulates' if is_activation else 'down-regulates'
+            if is_activation:
+                effect = 'up-regulates'
+            elif is_upergulation:
+                effect = 'up-regulates quantity'
+            elif is_inhibition:
+                effect = 'down-regulates'
+            elif is_downregulation:
+                effect = 'down-regulates quantity'
 
-        if dephos_stmt.residue and dephos_stmt.position:
+        if mod_stmt.residue and mod_stmt.position:
             residue = \
-                amino_acids[dephos_stmt.residue]['short_name'].capitalize() + \
-                dephos_stmt.position
+                amino_acids[mod_stmt.residue]['short_name'].capitalize() + \
+                mod_stmt.position
         else:
             residue = ''
 
         sentence_parts = []
-        if dephos_ev.text:
-            sentence_parts.append(sanitize_text(dephos_ev.text))
-        if activity_ev and activity_ev.text:
-            sentence_parts.append(sanitize_text(activity_ev.text))
-        if dephos_comment.get('sentence'):
-            sentence_parts.extend(dephos_comment['sentence'])
-        if activity_comment and activity_comment.get('sentence'):
-            sentence_parts.extend(activity_comment['sentence'])
+        if mod_ev.text:
+            sentence_parts.append(sanitize_text(mod_ev.text))
+        if reg_ev and reg_ev.text:
+            sentence_parts.append(sanitize_text(reg_ev.text))
+        if mod_comment.get('sentence'):
+            sentence_parts.extend(mod_comment['sentence'])
+        if reg_comment and reg_comment.get('sentence'):
+            sentence_parts.extend(reg_comment['sentence'])
         sentence = '|'.join(sorted(set(sentence_parts)))
 
-        direct_comment = dephos_comment.get('direct')
+        direct_comment = mod_comment.get('direct')
         if direct_comment and direct_comment[0].lower() == 'no':
             direct = 'NO'
         else:
             direct = 'YES'
 
-        act_taxid = activity_comment.get('taxid')
-        dephos_taxid = dephos_comment.get('taxid')
-        if act_taxid:
-            taxid = act_taxid[0]
-        elif dephos_taxid:
-            taxid = dephos_taxid[0]
+        reg_taxid = reg_comment.get('taxid')
+        mod_taxid = mod_comment.get('taxid')
+        if reg_taxid:
+            taxid = reg_taxid[0]
+        elif mod_taxid:
+            taxid = mod_taxid[0]
         else:
             taxid = '9606'
 
         curators = []
-        if dephos_cur and dephos_cur.get('curator'):
-            curators.append(dephos_cur['curator'])
-        if activity_cur and activity_cur.get('curator'):
-            curators.append(activity_cur['curator'])
+        if mod_cur and mod_cur.get('curator'):
+            curators.append(mod_cur['curator'])
+        if reg_cur and reg_cur.get('curator'):
+            curators.append(reg_cur['curator'])
         parts = sorted(curators)[0].split('@')[0].split('.')
         curator = parts[0][0] + parts[1]
 
         yield [
             # 'ENTITYA', 'TYPEA', 'IDA', 'DATABASEA'
-            phosphatase.name, 'protein', phosphatase.db_refs.get('UP'), 'UNIPROT',
+            enz.name, 'protein', enz.db_refs.get('UP'), 'UNIPROT',
             # 'ENTITYB', 'TYPEB', 'IDB', 'DATABASEB',
             substrate.name, 'protein', substrate.db_refs.get('UP'), 'UNIPROT',
             # 'EFFECT', 'MECHANISM', 'RESIDUE', 'SEQUENCE',
-            effect, 'dephosphorylation', residue, '',
+            effect, mod_key, residue, '',
             # 'TAX_ID', 'CELL_DATA', 'TISSUE_DATA',
             taxid, '', '',
             # 'MODULATOR_COMPLEX', 'TARGET_COMPLEX',
@@ -207,7 +239,7 @@ def curations_to_rows(curations):
             # 'MODIFICATIONA', 'MODASEQ', 'MODIFICATIONB', 'MODBSEQ',
             '', '', '', '',
             # 'PMID', 'DIRECT', 'NOTES', 'ANNOTATOR'
-            dephos_ev.pmid, direct, '', curator,
+            mod_ev.pmid, direct, '', curator,
             # 'SENTENCE'
             sentence
         ]
@@ -257,12 +289,23 @@ def merge_curation_rows(curation_rows):
 
 
 def get_pair_key(stmt, ev):
-    subj = stmt.subj if isinstance(stmt, RegulateActivity) else stmt.enz
-    obj = stmt.obj if isinstance(stmt, RegulateActivity) else stmt.sub
+    subj = stmt.subj if isinstance(stmt, (RegulateActivity, RegulateAmount)) \
+        else stmt.enz
+    obj = stmt.obj if isinstance(stmt, (RegulateActivity, RegulateAmount)) \
+        else stmt.sub
     return subj.name, obj.name, ev.pmid
 
 
 if __name__ == '__main__':
+    # -------------------------------
+    #mod_key_short = 'dephos'
+    #mod_key = 'dephosphorylation'
+    #mod_class = Dephosphorylation
+    mod_key_short = 'ubiq'
+    mod_key = 'ubiquitination'
+    mod_class = Ubiquitination
+    # -------------------------------
+    print('Exporting curations for %s' % mod_key)
     if os.path.exists('curations.json'):
         with open('curations.json', 'r') as fh:
             curs = json.load(fh)
@@ -271,12 +314,12 @@ if __name__ == '__main__':
         with open('curations.json', 'w') as fh:
             json.dump(curs, fh, indent=1)
     curs = [cur for cur in curs
-            if cur.get('source') == 'signor_dephos']
+            if cur.get('source') == 'signor_%s' % mod_key_short]
     # Sometimes we have duplicate curations that we can
     # squash here
     curs = {(cur['pa_hash'], cur['source_hash']): cur for cur in curs}.values()
     print('Found %d curations' % len(curs))
-    with open('dephosphorylations_with_reg_sorted.pkl', 'rb') as fh:
+    with open('%ss_with_reg_sorted.pkl' % mod_key, 'rb') as fh:
         stmts = pickle.load(fh)
     stmts_by_hash = {stmt.get_hash(): stmt for stmt in stmts}
     ev_by_source_hash = {ev.source_hash: ev
@@ -308,7 +351,7 @@ if __name__ == '__main__':
         curation_rows = merge_curation_rows(curation_rows)
         all_rows += curation_rows
 
-    with open('dephosphorylations_with_reg_export.csv', 'wt') as fh:
+    with open('%ss_with_reg_export.csv' % mod_key, 'wt') as fh:
         writer = csv.writer(fh, delimiter=',', quotechar='"')
         writer.writerow(header)
         for row in all_rows:
