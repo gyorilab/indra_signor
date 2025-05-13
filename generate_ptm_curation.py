@@ -159,6 +159,8 @@ def get_mod_and_reg_stmts(mod_key='dephophorylation', regulation_types=None):
 if __name__ == '__main__':
     ####################
     mod_key = 'phosphorylation'
+    version = '2'
+    include_site_novelty = False
     regulation_types = {RegulateAmount, RegulateActivity}
     ####################
     mod_class = modtype_to_modclass[mod_key]
@@ -209,8 +211,17 @@ if __name__ == '__main__':
     for k, v in mod_stmts_by_pair.items():
         for stmt in v:
             if k in has_signors_with_site:
+                # If the statement doesn't have site info
+                # it can't be novel
                 if stmt.position is None:
                     continue
+                # If it does have site info but we are not
+                # interested in cases where only the site
+                # is novel, we skip also
+                if not include_site_novelty:
+                    continue
+                # Finally, if the statement's site is already
+                # covered in SIGNOR, we skip
                 elif stmt.position in has_signors_with_site[k]:
                     continue
             elif k in has_signors_without_site:
@@ -292,9 +303,11 @@ if __name__ == '__main__':
     sorted_stmts = sorted(stmts_assembled, key=lambda x: get_sort_key(x, ev_counts))
 
     # Dump Statements as pickle as HTML
-    ac.dump_statements(sorted_stmts, f'{mod_key}s_with_reg_sorted.pkl')
+    ac.dump_statements(sorted_stmts,
+                       f'{mod_key}s_with_reg_sorted_v{version}.pkl')
     ha = HtmlAssembler(sorted_stmts,
                        db_rest_url='https://db.indra.bio',
-                       title=f'INDRA {mod_key} Statements with regulation sample')
+                       title=(f'INDRA {mod_key} Statements with '
+                              f'positive/negative regulation'))
     m = ha.make_model(grouping_level='agent-pair')
-    ha.save_model(f'indra_{mod_key}_with_reg.html')
+    ha.save_model(f'indra_{mod_key}_with_reg_v{version}.html')
