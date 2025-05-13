@@ -50,6 +50,16 @@ comment_mapping = {
 }
 
 
+effect_mapping = {
+    'upregulatesactivity': 'up-regulates activity',
+    'upregulatesquantity': 'up-regulates quantity',
+    'downregulateactivity': 'down-regulates activity',
+    'downregulatesactivity': 'down-regulates activity',
+    'downregulatesquantitybydestabilization': 'down-regulates quantity by destabilization',
+    'upregulatesquantitybystabilization': 'up-regulates quantity by destabilization'
+}
+
+
 def process_comment(comment):
     allowed_keys = {'CELL', 'TAXID', 'DIRECT', 'EFFECT', 'SENTENCE',
                     'MECHANISM', 'RESIDUE'}
@@ -77,7 +87,8 @@ def process_comment(comment):
         if key == 'SENTENCE':
             comment_data['sentence'].append(value)
         elif key == 'EFFECT':
-            comment_data['effect'].append(value)
+            mapped_value = effect_mapping[value] if value in effect_mapping else value
+            comment_data['effect'].append(mapped_value)
         elif key == 'MECHANISM':
             comment_data['mechanism'].append(value)
         elif key == 'DIRECT':
@@ -304,12 +315,22 @@ def get_pair_key(stmt, ev):
 
 if __name__ == '__main__':
     # -------------------------------
+
+    # Dephosphorylation
     #mod_key_short = 'dephos'
     #mod_key = 'dephosphorylation'
     #mod_class = Dephosphorylation
-    mod_key_short = 'ubiq'
-    mod_key = 'ubiquitination'
-    mod_class = Ubiquitination
+
+    # Ubiquitination
+    #mod_key_short = 'ubiq'
+    #mod_key = 'ubiquitination'
+    #mod_class = Ubiquitination
+
+    # Phosphorylation
+    mod_key_short = 'phos'
+    mod_key = 'phosphorylation'
+    mod_class = Phosphorylation
+    version = '2'
     # -------------------------------
     print('Exporting curations for %s' % mod_key)
     if os.path.exists('curations.json'):
@@ -325,7 +346,9 @@ if __name__ == '__main__':
     # squash here
     curs = {(cur['pa_hash'], cur['source_hash']): cur for cur in curs}.values()
     print('Found %d curations' % len(curs))
-    with open('%ss_with_reg_sorted.pkl' % mod_key, 'rb') as fh:
+    fname = '%ss_with_reg_sorted%s.pkl' % \
+        (mod_key, f'_v{version}' if version else '')
+    with open(fname, 'rb') as fh:
         stmts = pickle.load(fh)
     stmts_by_hash = {stmt.get_hash(): stmt for stmt in stmts}
     ev_by_source_hash = {ev.source_hash: ev
