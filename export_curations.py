@@ -57,16 +57,22 @@ def process_comment(comment):
         return {}
 
     comment = comment_mapping.get(comment, comment)
-    parts = comment.split(';')
+    # Corner case: trailing ;
+    parts = comment.strip(';').split(';')
     comment_data = defaultdict(list)
     for part in parts:
+        part = part.strip()
         try:
             key, value = part.split(':', maxsplit=1)
         except ValueError:
+            print('Value error when splitting comment part: %s' % part)
             print(comment)
+            print('--')
             break
         if key not in allowed_keys:
+            print('Key %s not in allowed keys' % key)
             print(comment)
+            print('--')
             break
         if key == 'SENTENCE':
             comment_data['sentence'].append(value)
@@ -112,7 +118,7 @@ def curations_to_rows(curations):
                     # We just handle one effect for now
                     assert len(mod_comment['effect']) == 1
                     effect = mod_comment['effect'][0]
-                    if 'down-regulates' in effect:
+                    if 'down-regulates' in effect.lower():
                         stmt_cls = DecreaseAmount if \
                             effect.startswith('down-regulates quantity') else Inhibition
                         stmts_by_type[stmt_cls].append(
@@ -121,7 +127,7 @@ def curations_to_rows(curations):
                         )
                         has_neg_reg = True
                         mod_comment.pop('effect')
-                    elif 'up-regulates' in effect:
+                    elif 'up-regulates' in effect.lower():
                         stmt_cls = IncreaseAmount if \
                             effect.startswith('up-regulates quantity') else Activation
                         stmts_by_type[stmt_cls].append(
